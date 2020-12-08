@@ -1,46 +1,35 @@
-import neovim
+from pathlib import Path
 
+import pynvim
 
 try:
-    from isort import SortImports
+    import isort
     isort_imported = True
 except ImportError:
     isort_imported = False
 
 
-ISORT_COMMAND = 'isort'
-ISORT_OPTIONS = [
-    '--line-width',
-    '--top',
-    '--future',
-    '--builtin',
-    '--thirdpaty',
-    '--project',
-    '--virtual-env',
-    '--multi-line',
-    '--indent',
-    '--add-import',
-    '--force-adds',
-    '--remove-import',
-]
-
-
 def _count_blanks(lines):
+    blanks = 0
+
     for i, line in enumerate(reversed(lines)):
         if line.strip():
-            return i
+            break
+
+        blanks += 1
+
+    return blanks
 
 
-@neovim.plugin
+@pynvim.plugin
 class IsortNvim:
-    def __init__(self, nvim):
-        self.nvim = nvim
+    def __init__(self, vim):
+        self.vim = vim
 
-    @neovim.command(
+    @pynvim.command(
         'Isort',
         nargs='*',
         range='%',
-        complete='customlist,IsortCompletions',
         sync=True,
     )
     def isort_command(self, args, range):
@@ -48,26 +37,21 @@ class IsortNvim:
             self.error('Could not import isort')
             return
 
-        old_lines = self.nvim.current.buffer[range[0] - 1:range[1]]
+        old_lines = self.vim.current.buffer[range[0] - 1:range[1]]
         blanks = _count_blanks(old_lines)
 
-        output = SortImports(file_contents='\n'.join(old_lines)).output
+        output = isort.code(
+            '\n'.join(old_lines),
+            file_path=Path(self.vim.current.buffer.name)
+
+        )
         new_lines = output.split('\n')
         new_blanks = _count_blanks(new_lines)
         if new_blanks > blanks:
             del new_lines[-(new_blanks - blanks):]
 
         if old_lines != new_lines:
-            self.nvim.current.buffer[range[0] - 1:range[1]] = new_lines
+            self.vim.current.buffer[range[0] - 1:range[1]] = new_lines
 
     def error(self, msg):
-        self.nvim.err_write('[isort] {}\n'.format(msg))
-
-    @neovim.function('IsortCompletions', sync=True)
-    def isort_completions(self, args):
-        arglead, cmdline, cursorpos, *_ = args
-        return [
-            option
-            for option in ISORT_OPTIONS
-            if option.startswith(arglead)
-        ]
+        self.vim.err_write('[isort] {}\n'.format(msg))
